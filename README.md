@@ -1,7 +1,7 @@
 # HTTP Session Replacement
 
 [![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.amadeus/session/badge.svg?style=flat-square)](https://maven-badges.herokuapp.com/maven-central/com.amadeus/session)
-[![Javadocs](http://www.javadoc.io/badge/com.amadeus/session-replacement.svg?style=flat-square)](http://www.javadoc.io/badge/com.amadeus/session-replacement)
+[![Javadocs](http://www.javadoc.io/badge/com.amadeus/session-replacement.svg?style=flat-square)](http://www.javadoc.io/doc/com.amadeus/session-replacement)
 [![Travis](https://img.shields.io/travis/AmadeusITGroup/HttpSessionReplacer.svg?style=flat-square)](http://travis-ci.org/AmadeusITGroup/HttpSessionReplacer)
 [![license](https://img.shields.io/github/license/AmadeusITGroup/HttpSessionReplacer.svg?style=flat-square)](LICENSE)
 [![Dependency Status](https://www.versioneye.com/user/projects/583d2f19d2fd57003fdfbe76/badge.svg?style=flat-square)](https://www.versioneye.com/user/projects/583d2f19d2fd57003fdfbe76/)
@@ -228,13 +228,30 @@ The first one is based on cookies and is the default one.
 The second one is based on URL rewriting where the session is appended at the
 end of the path part of URL (preceding the query).
 
+The session propagation can be configured using web.xml (standard Servlet approach)
+
+```xml
+<web-app> 
+...
+  <session-config>
+    <tracking-mode>URL</tracking-mode>
+  </session-config>
+</web-app> 
+```
+It can also be configured using system property or servlet initialization parameter
+`com.amadeus.session.tracking`. Valid values are `COOKIE`, `URL` or `DEFAULT` 
+(which is same as `COOKIE`).
+
+The URL rewriting session propagation is not supported on Tomcat 6 based servlet 
+engines (Tomcat 6.x, JBoss 6.x).
+
 #### Cookie Session Management
 
 The session is stored as a UUID inside a cookie.
 The cookie name is one of the following by descending order of priority:
 
-* Using the `com.amadeus.session.cookieName` initialization parameter of the ServletContext.
-* Using the `com.amadeus.session.cookieName` system property.
+* Using the `com.amadeus.session.sessionName` initialization parameter of the ServletContext.
+* Using the `com.amadeus.session.sessionName` system property.
 * `JSESSIONID`.
 
 In case of HTTPS requests, cookies can be marked as secure.
@@ -473,6 +490,8 @@ This, for example, allows using Kubernetes services to get all cluster nodes.
 The data for a single session is stored on a single Redis node using the hash
 tags in the key name (i.e. session is put in braces in key {33fdd1b6-b496-4b33-9f7d-df96679d32fe}).
 
+Due to characteristics of the Redis cluster, the update of data is not done in atomic mode. 
+
 #### Redis Configuration
 
 The redis repository can be configured using either a repository configuration
@@ -577,16 +596,15 @@ EXPIREAT com.amadeus.session:expirations1439245070 1439245370
 ```
 
 The expiration of this key is set 5 minutes after the minute it actually expires.
-The background task will then perform following Redis transaction:
+The background task will then perform following Redis operations:
 
 ```redis
-MULTI
 SMEMBERS com.amadeus.session:expirations:1439245070
 DEL com.amadeus.session:expirations:1439245070
-EXEC
 ```
 
-From Redis 3.2, a `SPOP` command can be used instead of the above `MULTI` block.
+From Redis 3.2, a `SPOP` command can be used instead of the above block. When used
+in non-cluster mode, the block is wrapped in `MULTI/EXEC` sequence.
 In this case, each node retrieves up to 1000 members until all are exhausted, and
 then a `DEL` command is issued.
 
@@ -637,10 +655,10 @@ SETEX com.amadeus.session:expire:webapp-namespace:{33fdd1b6-b496-4b33-9f7d-df966
 |                                               +----EXPIRE webapp-namespace:{sessionId} 2100--------->                   |
 |                                               |----SETEX webapp-namespace:expire:{sessionId} 1800 "">                   |
 |                                               |                                                     |                   |
-|                                               |    MULTI                                            |                   |
-| NEW EVENT: 1439245080 time reached            +----SMEMBERS expirations:1439245080------------------> Return sessionIds |
+|                                               |                                                     |                   |
+| NEW EVENT: 1439245080 time reached            +----SPOP expirations:1439245080----------------------> Return sessionIds |
 |                                               |    DEL expirations:1439245080                       |                   |
-|                                               |    EXEC                                             |                   |
+|                                               |                                                     |                   |
 |                                               |                                                     |                   |
 |                                               +----EXISTS webapp-namespace:{sessionId}-------------->Session has expired|
 |                                               <------------Session expired notification-------------+                   |

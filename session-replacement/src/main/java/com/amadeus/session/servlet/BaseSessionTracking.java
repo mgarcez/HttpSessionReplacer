@@ -21,19 +21,19 @@ public abstract class BaseSessionTracking implements SessionTracking {
 
   private boolean appendTimestamp;
 
+  protected static final char SESSION_ID_TIMESTAMP_SEPARATOR = '!';
+
   @Override
   public void configure(SessionConfiguration configuration) {
     // Read standard configuration
     idName = configuration.getSessionIdName();
     String idProviderType = configuration.getAttribute(SessionConfiguration.SESSION_ID_PROVIDER, "random");
     appendTimestamp = configuration.isTimestampSufix();
-    switch (idProviderType) {
-    case "uuid":
+    if ("uuid".equals(idProviderType)) {
       idProvider = new UuidProvider();
-      break;
-    default:
+    }
+    else {
       idProvider = new RandomIdProvider();
-      break;
     }
     idProvider.configure(configuration);
   }
@@ -42,8 +42,8 @@ public abstract class BaseSessionTracking implements SessionTracking {
   public String newId() {
     String newId = idProvider.newId();
     if (appendTimestamp) {
-      StringBuilder suffixedId = new StringBuilder(newId.length() + 11).append(newId);
-      newId = suffixedId.append('!').append(System.currentTimeMillis()).toString();
+        StringBuilder suffixedId = new StringBuilder(newId.length() + 11).append(newId);
+        newId = suffixedId.append(SESSION_ID_TIMESTAMP_SEPARATOR).append(System.currentTimeMillis()).toString();
     }
     return newId;
   }
@@ -62,7 +62,18 @@ public abstract class BaseSessionTracking implements SessionTracking {
    * @return extracted id or <code>null</code>
    */
   protected String clean(String value) {
-    return idProvider.readId(value);
+    if (!appendTimestamp) {
+      return idProvider.readId(value);
+    }
+    String timeStamp = "";
+    String cleanValue = value;
+    int separatorIndex = value.lastIndexOf(SESSION_ID_TIMESTAMP_SEPARATOR);
+    if (separatorIndex != -1) {
+        timeStamp = value.substring(separatorIndex);
+        cleanValue = value.substring(0, separatorIndex);
+    }
+    cleanValue = idProvider.readId(cleanValue);
+    return cleanValue != null ? cleanValue + timeStamp : cleanValue;
   }
 
 }

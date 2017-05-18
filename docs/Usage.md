@@ -85,6 +85,10 @@ $JBOSS_HOME/bin/standalone.sh -mp $JBOSS_HOME/modules:$SESSION_PATH/modules
 # on Windows: $JBOSS_HOME\bin\standalone.ps1 -mp $JBOSS_HOME\modules;$SESSION_PATH\modules
 ```
 
+### URL session propagation
+
+URL session propagation is _not_ supported in JBoss 6.x. It works in versions 7.x and in all Wildfly verions.
+
 ### Session replacement configuration in Wildfly/JBoss configuration file
 
 TODO explain configuration using system properties in standalone.xml
@@ -162,14 +166,15 @@ manifested with class cast exceptions. It is recommended to give preference to t
 Tomcat 6.x supports Servlet 2.5 specification. This environment has few limitations and prerequisites:
 
 * your web application must have at least one `Filter`, otherwise there will be no session replacement.
-* if you can modify your web application, add com.amadeus.session.servlet.SessionFilter as first filter of your web application.
+* if you can modify your web application, add `com.amadeus.session.servlet.SessionFilter` as first filter of your web application.
 * to support sending events to `HttpSessionListener` and `HttpSessionAttributeListener`, start the agent with `session=2.x` argument or set system property `com.amadeus.session.servlet.api=2.x`
+* URL session propagation is _not_ supported in Tomcat 6.x.
 
 ### Usage with Spring library
 
 The library is fully compatible with Spring library, and there is no need additional for any special configuration. Note, however, that you can't use Spring Session and Http Session Replacement at the same time.
 
-## TODO Redis configuration
+## Redis configuration
 
 ### Session replacement agent configuration
 
@@ -202,3 +207,28 @@ have at least 3 sentinels and one or two slaves for the master.
 ### Redis Cluster Configuration
 
 See [redis cluster tutorial](http://redis.io/topics/cluster-tutorial) for more information.
+
+When using redis cluster mode, if some of hash slots are not covered (i.e. when
+one master goes down), other masters will be replying with CLUSTERDOWN error 
+until all slots are covered (e.g. new master is elected). This will result in 
+full outage of the session storage until everything is fine. Fortunately, redis 
+cluster can be configured to give results even if there is no full coverage.
+When using NOTIF expiration strategy, all the related keys are stored on the 
+same Redis instance and we suggest to use this feature as it allows higher 
+availability.
+
+```
+# By default Redis Cluster nodes stop accepting queries if they detect there
+# is at least an hash slot uncovered (no available node is serving it).
+# This way if the cluster is partially down (for example a range of hash slots
+# are no longer covered) all the cluster becomes, eventually, unavailable.
+# It automatically returns available as soon as all the slots are covered again.
+#
+# However sometimes you want the subset of the cluster which is working,
+# to continue to accept queries for the part of the key space that is still
+# covered. In order to do so, just set the cluster-require-full-coverage
+# option to no.
+#
+cluster-require-full-coverage no
+```
+

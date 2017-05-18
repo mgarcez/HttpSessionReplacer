@@ -28,7 +28,7 @@ JVM with agent activated.
 Container testing is using arquillian framework. Same battery of tests can be run against
 several servlet containers. All tests are part of `session-replacement` project. In this
 project, coverage report can be activated using `coverage-per-test` profile.
-Following paragraphs describe testing in specific containers.
+Following paragraphs describe integration testing with specific containers.
 
 #### Jetty 9
 
@@ -45,7 +45,7 @@ The tests run on an embedded container.
 The testing is invoked using
 
 ```sh
-mvn verify -Ptomcat-7-arquillian,arquillian-tests
+mvn verify -Ptomcat-7-embedded-arquillian,arquillian-tests
 ```
 
 #### Wildfly 10
@@ -55,6 +55,10 @@ The testing is invoked using
 
 ```sh
 mvn verify -Pwildfly-10-managed-arquillian,arquillian-tests
+```
+
+```sh
+mvn verify -Pwildfly-10-managed-arquillian-with-agent,external-arquillian-tests
 ```
 
 ### Redis Tests
@@ -112,7 +116,7 @@ Verify that builds and test pass.
 Set new version for the release.
 
 ```sh
-mvn versions:set -DnewVersion=0.3.2
+mvn versions:set -DnewVersion=0.4.2
 ```
 
 Perform build with release profile to add sources and javadoc. Perform deploy to OSS Sonatype Nexus:
@@ -127,14 +131,14 @@ If release is successful, commit the version and commit and tag changes in git.
 ```sh
 mvn versions:commit
 git add *
-git commit -m "version 0.3.2"
-git tag -a v0.3.2 -m "version 0.3.2"
+git commit -m "version 0.4.2"
+git tag -a v0.4.2 -m "version 0.4.2"
 git push origin --tags
 ```
 
 Set version back to snapshot and commit changes. 
 
 ```sh
-mvn versions:set -DnewVersion=0.3-SNAPSHOT
+mvn versions:set -DnewVersion=0.4-SNAPSHOT
 ```
 

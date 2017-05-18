@@ -150,18 +150,19 @@ class NotificationExpirationManagement implements RedisExpirationStrategy {
 
       logger.info("Cleaning up sessions expiring at {}", prevMin);
       byte[] key = getForcedExpirationsKey(prevMin);
-      while (true) {
-        Set<byte[]> sessionsToExpire = getKeysToExpire(key);
-        if (sessionsToExpire.isEmpty()) {
-          return;
+      Set<byte[]> sessionsToExpire = getKeysToExpire(key);
+      if (sessionsToExpire == null || sessionsToExpire.isEmpty()) {
+        return;
+      }
+      for (byte[] session : sessionsToExpire) {
+        if (logger.isDebugEnabled()) {
+          logger.debug("Cleaning-up session {}", new String(session));
         }
-        for (byte[] session : sessionsToExpire) {
-          // check if session is active
-          if (redis.exists(repository.getSessionKey(session))) {
-            // We run session delete in another thread, otherwise we would
-            // block this thread listener.
-            sessionManager.deleteAsync(encode(session), true);
-          }
+        // check if session is active
+        if (redis.exists(repository.getSessionKey(session))) {
+          // We run session delete in another thread, otherwise we would
+          // block this thread listener.
+          sessionManager.deleteAsync(encode(session), true);
         }
       }
     }
@@ -180,17 +181,18 @@ class NotificationExpirationManagement implements RedisExpirationStrategy {
 
       logger.info("Triggering up sessions expiring at {}", prevMin);
       byte[] key = getExpirationsKey(prevMin);
-      while (true) {
-        Set<byte[]> sessionsToExpire = getKeysToExpire(key);
-        if (sessionsToExpire.isEmpty()) {
-          return;
+      Set<byte[]> sessionsToExpire = getKeysToExpire(key);
+      if (sessionsToExpire == null || sessionsToExpire.isEmpty()) {
+        return;
+      }
+      for (byte[] session : sessionsToExpire) {
+        if (logger.isDebugEnabled()) {
+          logger.debug("Expiring session {}", new String(session));
         }
-        for (byte[] session : sessionsToExpire) {
-          byte[] sessionExpireKey = getSessionExpireKey(encode(session));
-          // Exists will trigger expire event. See explanation of the
-          // algorithm for the details.
-          redis.exists(sessionExpireKey);
-        }
+        byte[] sessionExpireKey = getSessionExpireKey(encode(session));
+        // Exists will trigger expire event. See explanation of the
+        // algorithm for the details.
+        redis.exists(sessionExpireKey);
       }
     }
   }
@@ -237,7 +239,7 @@ class NotificationExpirationManagement implements RedisExpirationStrategy {
       // If stickiness is active, and there was failover, we need to delete
       // previous session expire key
       if (sticky && !owner.equals(session.getPreviousOwner())) {
-        redis.del(encode(constructKeyExpirePrefix(session.getPreviousOwner())));
+        redis.del(getSessionExpireKey(session.getPreviousOwner(), session.getId()));
       }
     }
 
@@ -376,6 +378,20 @@ class NotificationExpirationManagement implements RedisExpirationStrategy {
   }
 
   /**
+   * Builds key whose expire pub event is used to expire session
+   *
+   * @param owner
+   *          node that was owner of the session
+   * @param id
+   *          session id
+   * @return key as byte array
+   */
+  byte[] getSessionExpireKey(String owner, String id) {
+    String ownerBasedPrefix = constructKeyExpirePrefix(owner);
+    return encode(new StringBuilder(ownerBasedPrefix.length() + id.length() + 1).append(ownerBasedPrefix).append('{')
+        .append(id).append('}').toString());
+  }
+  /**
    * Builds expirations key for the instant in milliseconds. Key is used to
    * clean up sessions for which we didn't receive expire event.
    *
@@ -432,22 +448,19 @@ class NotificationExpirationManagement implements RedisExpirationStrategy {
           expirationListener = new ExpirationListener(sessionManager, keyExpirePrefix);
           expirationListener.start(redis);
           logger.info("Stopped subscribing for expiration events.");
-          break;
+          return;
         } catch (Exception e) { // NOSONAR
           if (Thread.interrupted()) {
             return;
           }
-          if (redis.isRedisException(e)) {
-            if (e.getCause() instanceof InterruptedException) {
-              logger.warn("Interrupted subscribtion for expiration events.");
-              break;
-            }
+          if (redis.isRedisException(e) && e.getCause() instanceof InterruptedException) {
+            logger.warn("Interrupted subscribtion for expiration events.");
+            return;
           }
           retryOnException(e);
           if (Thread.interrupted()) {
             return;
           }
-          retryOnException(e);
         }
       }
     }
